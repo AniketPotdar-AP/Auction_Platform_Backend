@@ -98,42 +98,6 @@ A scalable backend for a multi-category online auction platform built with Node.
 
 The server will start on `http://localhost:5000` (or the port specified in your `.env`).
 
-## API Endpoints
-
-### Authentication
-- `POST /api/users/register` - Register new user
-- `POST /api/users/login` - User login
-- `GET /api/users/me` - Get current user
-- `PUT /api/users/me` - Update user profile
-
-### Auctions
-- `GET /api/auctions` - Get all auctions (with filtering)
-- `GET /api/auctions/:id` - Get single auction
-- `POST /api/auctions` - Create auction (Seller only)
-- `PUT /api/auctions/:id` - Update auction (Seller/Admin)
-- `DELETE /api/auctions/:id` - Delete auction (Seller/Admin)
-
-### Bidding
-- `GET /api/bids/auction/:auctionId` - Get bids for auction
-- `POST /api/bids` - Place a bid
-- `GET /api/bids/my-bids` - Get user's bidding history
-
-### Payments
-- `POST /api/payments/create-intent` - Create payment intent
-- `POST /api/payments/confirm` - Confirm payment
-- `GET /api/payments/my-payments` - Get user's payments
-
-### Notifications
-- `GET /api/notifications` - Get user notifications
-- `PUT /api/notifications/:id/read` - Mark notification as read
-- `GET /api/notifications/unread-count` - Get unread count
-
-### Admin (Admin only)
-- `GET /api/admin/users` - Get all users
-- `GET /api/admin/auctions` - Get all auctions
-- `GET /api/admin/stats` - Get dashboard statistics
-- `PUT /api/admin/auctions/:id/approve` - Approve auction
-
 ## Real-time Features
 
 ### WebSocket Events
