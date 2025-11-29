@@ -14,7 +14,7 @@ const userSchema = new mongoose.Schema({
     unique: true,
     lowercase: true,
     validate: {
-      validator: function(email) {
+      validator: function (email) {
         return /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(email);
       },
       message: 'Please enter a valid email'
@@ -28,42 +28,97 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['buyer', 'seller', 'admin'],
-    default: 'buyer'
+    enum: ['user', 'admin'],
+    default: 'user'
+  },
+  userType: {
+    type: String,
+    default: 'regular'
+  },
+  permissions: {
+    canBid: {
+      type: Boolean,
+      default: true
+    },
+    canCreateAuction: {
+      type: Boolean,
+      default: false
+    }
+  },
+  phone: {
+    type: String,
+    trim: true
+  },
+  address: {
+    type: String,
+    trim: true
   },
   avatar: {
     type: String,
     default: ''
   },
-  phone: {
+  // Aadhaar verification fields
+  aadhaarNumber: {
     type: String,
-    default: ''
+    trim: true,
+    validate: {
+      validator: function (v) {
+        return !v || /^\d{12}$/.test(v); // 12 digits
+      },
+      message: 'Aadhaar number must be 12 digits'
+    }
   },
-  address: {
-    street: String,
-    city: String,
-    state: String,
-    zipCode: String,
-    country: String
+  aadhaarImages: [{
+    type: String, // Cloudinary URLs
+    required: false
+  }],
+  verificationStatus: {
+    type: String,
+    enum: ['pending', 'verified', 'rejected'],
+    default: 'pending'
   },
-  isVerified: {
+  verificationNotes: {
+    type: String,
+    trim: true
+  },
+  verifiedAt: Date,
+  verifiedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  // Password reset fields
+  resetPasswordToken: String,
+  resetPasswordExpire: Date,
+  // Email verification
+  isEmailVerified: {
     type: Boolean,
     default: false
   },
-  verificationToken: String,
-  resetPasswordToken: String,
-  resetPasswordExpire: Date,
-  lastLogin: Date,
+  emailVerificationToken: String,
+  emailVerificationExpire: Date,
+  // Account status
   isActive: {
     type: Boolean,
     default: true
+  },
+  lastLogin: Date,
+  // Seller rating
+  sellerRating: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 5
+  },
+  totalReviews: {
+    type: Number,
+    default: 0
   }
 }, {
   timestamps: true
 });
 
 // Hash password before saving
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
 
   const salt = await bcrypt.genSalt(10);
@@ -71,18 +126,33 @@ userSchema.pre('save', async function(next) {
   next();
 });
 
+// Update permissions before saving
+userSchema.pre('save', function (next) {
+  if (this.isModified('verificationStatus')) {
+    this.updatePermissions();
+  }
+  next();
+});
+
 // Compare password method
-userSchema.methods.comparePassword = async function(candidatePassword) {
+userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Remove password from JSON output
-userSchema.methods.toJSON = function() {
+// Update permissions based on verification status
+userSchema.methods.updatePermissions = function () {
+  this.permissions.canBid = true; // Always true for logged-in users
+  this.permissions.canCreateAuction = this.verificationStatus === 'verified';
+};
+
+// Remove sensitive fields from JSON output
+userSchema.methods.toJSON = function () {
   const userObject = this.toObject();
   delete userObject.password;
   delete userObject.resetPasswordToken;
   delete userObject.resetPasswordExpire;
-  delete userObject.verificationToken;
+  delete userObject.emailVerificationToken;
+  delete userObject.emailVerificationExpire;
   return userObject;
 };
 

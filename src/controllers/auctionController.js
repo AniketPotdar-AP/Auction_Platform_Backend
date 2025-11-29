@@ -2,6 +2,7 @@ const Auction = require('../models/Auction');
 const Bid = require('../models/Bid');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
+const { uploadToImageKit } = require('../utils/imagekit');
 
 // @desc    Get all auctions
 // @route   GET /api/auctions
@@ -130,6 +131,16 @@ const createAuction = async (req, res) => {
     // Add seller to req.body
     req.body.seller = req.user._id;
 
+    // Upload images to ImageKit
+    if (req.files && req.files.length > 0) {
+      const imageUrls = [];
+      for (const file of req.files) {
+        const result = await uploadToImageKit(file.buffer);
+        imageUrls.push(result.secure_url);
+      }
+      req.body.images = imageUrls;
+    }
+
     const auction = await Auction.create(req.body);
 
     res.status(201).json({
@@ -166,8 +177,8 @@ const updateAuction = async (req, res) => {
       });
     }
 
-    // Make sure user is auction seller or admin
-    if (auction.seller.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    // Make sure user is auction seller
+    if (auction.seller.toString() !== req.user._id.toString()) {
       return res.status(401).json({
         success: false,
         message: 'Not authorized to update this auction'
@@ -214,8 +225,8 @@ const deleteAuction = async (req, res) => {
       });
     }
 
-    // Make sure user is auction seller or admin
-    if (auction.seller.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    // Make sure user is auction seller
+    if (auction.seller.toString() !== req.user._id.toString()) {
       return res.status(401).json({
         success: false,
         message: 'Not authorized to delete this auction'
@@ -334,6 +345,56 @@ const getMyAuctions = async (req, res) => {
   }
 };
 
+// @desc    Get auctions won by user
+// @route   GET /api/auctions/won
+// @access  Private
+const getWonAuctions = async (req, res) => {
+  try {
+    const auctions = await Auction.find({
+      winner: req.user._id,
+      status: 'completed'
+    })
+      .populate('seller', 'name avatar email sellerRating')
+      .sort({ endTime: -1 });
+
+    res.json({
+      success: true,
+      count: auctions.length,
+      data: auctions
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Get active users count
+// @route   GET /api/auctions/active-users
+// @access  Public
+const getActiveUsers = async (req, res) => {
+  try {
+    // Count users who have logged in within the last 24 hours
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const activeUsersCount = await User.countDocuments({
+      lastLogin: { $gte: oneDayAgo }
+    });
+
+    res.json({
+      success: true,
+      count: activeUsersCount
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
 module.exports = {
   getAuctions,
   getAuction,
@@ -342,5 +403,7 @@ module.exports = {
   deleteAuction,
   approveAuction,
   getAuctionsBySeller,
-  getMyAuctions
+  getMyAuctions,
+  getWonAuctions,
+  getActiveUsers
 };

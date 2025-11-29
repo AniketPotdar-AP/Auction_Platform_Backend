@@ -1,16 +1,30 @@
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const Razorpay = require('razorpay');
+const crypto = require('crypto');
 const Payment = require('../models/Payment');
 const Auction = require('../models/Auction');
 const Notification = require('../models/Notification');
+const ActivityLog = require('../models/ActivityLog');
 
-// @desc    Create payment intent
-// @route   POST /api/payments/create-intent
+// Lazy initialization of Razorpay
+let razorpay = null;
+const getRazorpay = () => {
+  if (!razorpay && process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+    razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET
+    });
+  }
+  return razorpay;
+};
+
+// @desc    Create Razorpay order
+// @route   POST /api/payments/create-order
 // @access  Private
-const createPaymentIntent = async (req, res) => {
+const createOrder = async (req, res) => {
   try {
     const { auctionId, amount } = req.body;
 
-    // Verify auction exists and user is the winner
+    // Validate auction exists and user won it
     const auction = await Auction.findById(auctionId);
     if (!auction) {
       return res.status(404).json({
@@ -29,66 +43,105 @@ const createPaymentIntent = async (req, res) => {
     if (auction.status !== 'completed') {
       return res.status(400).json({
         success: false,
-        message: 'Auction is not completed'
+        message: 'Auction is not completed yet'
       });
     }
 
-    // Create payment intent
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100), // Convert to cents
-      currency: 'inr',
-      metadata: {
-        auctionId: auctionId,
-        userId: req.user._id.toString()
-      }
+    // Check if payment already exists
+    const existingPayment = await Payment.findOne({
+      user: req.user._id,
+      auction: auctionId,
+      status: { $in: ['pending', 'completed'] }
     });
 
-    // Save payment record
+    if (existingPayment) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment already initiated for this auction'
+      });
+    }
+
+    const options = {
+      amount: amount * 100, // amount in paisa
+      currency: 'INR',
+      receipt: `auction_${auctionId}_${Date.now()}`,
+      payment_capture: 1
+    };
+
+    const razorpayInstance = getRazorpay();
+    if (!razorpayInstance) {
+      return res.status(500).json({
+        success: false,
+        message: 'Payment service not configured'
+      });
+    }
+
+    const order = await razorpayInstance.orders.create(options);
+
+    // Create payment record
     const payment = await Payment.create({
       user: req.user._id,
       auction: auctionId,
-      amount,
-      paymentMethod: 'stripe',
-      transactionId: paymentIntent.id,
-      paymentIntentId: paymentIntent.id
+      amount: amount,
+      currency: 'INR',
+      status: 'pending',
+      paymentMethod: 'razorpay',
+      transactionId: order.id,
+      orderId: order.id
     });
 
-    res.json({
+    // Log activity
+    await ActivityLog.logActivity({
+      user: req.user._id,
+      action: 'payment_initiated',
+      description: `Payment initiated for auction: ${auction.title}`,
+      metadata: { auctionId, amount, orderId: order.id },
+      auction: auctionId,
+      payment: payment._id
+    });
+
+    res.status(200).json({
       success: true,
-      data: {
-        clientSecret: paymentIntent.client_secret,
-        paymentId: payment._id
-      }
+      order,
+      paymentId: payment._id
     });
   } catch (error) {
-    console.error(error);
+    console.error('Razorpay create order error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Payment order creation failed',
+      error: error.message
     });
   }
 };
 
-// @desc    Confirm payment
-// @route   POST /api/payments/confirm
+// @desc    Verify Razorpay payment
+// @route   POST /api/payments/verify
 // @access  Private
-const confirmPayment = async (req, res) => {
+const verifyPayment = async (req, res) => {
   try {
-    const { paymentIntentId } = req.body;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, auctionId } = req.body;
 
-    // Retrieve payment intent from Stripe
-    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
 
-    if (paymentIntent.status === 'succeeded') {
-      // Update payment record
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(body.toString())
+      .digest('hex');
+
+    const isAuthentic = expectedSignature === razorpay_signature;
+
+    if (isAuthentic) {
+      // Update payment status
       const payment = await Payment.findOneAndUpdate(
-        { paymentIntentId },
+        { orderId: razorpay_order_id },
         {
           status: 'completed',
-          metadata: paymentIntent.metadata
+          paymentId: razorpay_payment_id,
+          transactionId: razorpay_payment_id
         },
         { new: true }
-      );
+      ).populate('auction');
 
       if (!payment) {
         return res.status(404).json({
@@ -97,31 +150,54 @@ const confirmPayment = async (req, res) => {
         });
       }
 
-      // Create notification for seller
-      const auction = await Auction.findById(payment.auction).populate('seller', 'name');
-      await Notification.create({
-        user: auction.seller,
-        type: 'payment_required', // Could be 'payment_received'
-        title: 'Payment Received',
-        message: `Payment of $${payment.amount} has been received for your auction "${auction.title}"`,
-        auction: payment.auction
+      // Update auction payment status if needed
+      await Auction.findByIdAndUpdate(auctionId, {
+        paymentStatus: 'paid'
       });
 
-      res.json({
+      // Create notification for seller
+      const auction = payment.auction;
+      await Notification.create({
+        user: auction.seller,
+        type: 'payment_successful',
+        title: 'Payment Received',
+        message: `Payment of ₹${payment.amount} received for auction: ${auction.title}`,
+        auction: auctionId
+      });
+
+      // Log activity
+      await ActivityLog.logActivity({
+        user: req.user._id,
+        action: 'payment_completed',
+        description: `Payment completed for auction: ${auction.title}`,
+        metadata: { auctionId, amount: payment.amount, paymentId: razorpay_payment_id },
+        auction: auctionId,
+        payment: payment._id
+      });
+
+      res.status(200).json({
         success: true,
-        data: payment
+        message: 'Payment verified successfully',
+        payment
       });
     } else {
+      // Update payment status to failed
+      await Payment.findOneAndUpdate(
+        { orderId: razorpay_order_id },
+        { status: 'failed' }
+      );
+
       res.status(400).json({
         success: false,
-        message: 'Payment not completed'
+        message: 'Invalid payment signature'
       });
     }
   } catch (error) {
-    console.error(error);
+    console.error('Razorpay verify payment error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Payment verification failed',
+      error: error.message
     });
   }
 };
@@ -132,14 +208,7 @@ const confirmPayment = async (req, res) => {
 const getMyPayments = async (req, res) => {
   try {
     const payments = await Payment.find({ user: req.user._id })
-      .populate({
-        path: 'auction',
-        select: 'title images seller',
-        populate: {
-          path: 'seller',
-          select: 'name'
-        }
-      })
+      .populate('auction', 'title images status')
       .sort({ createdAt: -1 });
 
     res.json({
@@ -156,111 +225,8 @@ const getMyPayments = async (req, res) => {
   }
 };
 
-// @desc    Get payment details
-// @route   GET /api/payments/:id
-// @access  Private
-const getPayment = async (req, res) => {
-  try {
-    const payment = await Payment.findById(req.params.id)
-      .populate({
-        path: 'auction',
-        populate: {
-          path: 'seller winner',
-          select: 'name email'
-        }
-      })
-      .populate('user', 'name email');
-
-    if (!payment) {
-      return res.status(404).json({
-        success: false,
-        message: 'Payment not found'
-      });
-    }
-
-    // Check if user is authorized
-    if (
-      payment.user.toString() !== req.user._id.toString() &&
-      payment.auction.seller.toString() !== req.user._id.toString() &&
-      req.user.role !== 'admin'
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to view this payment'
-      });
-    }
-
-    res.json({
-      success: true,
-      data: payment
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error'
-    });
-  }
-};
-
-// @desc    Process refund
-// @route   POST /api/payments/:id/refund
-// @access  Private (Admin only)
-const processRefund = async (req, res) => {
-  try {
-    const payment = await Payment.findById(req.params.id);
-
-    if (!payment) {
-      return res.status(404).json({
-        success: false,
-        message: 'Payment not found'
-      });
-    }
-
-    if (payment.status !== 'completed') {
-      return res.status(400).json({
-        success: false,
-        message: 'Payment is not completed'
-      });
-    }
-
-    // Process refund with Stripe
-    const refund = await stripe.refunds.create({
-      payment_intent: payment.paymentIntentId,
-      amount: Math.round(payment.amount * 100)
-    });
-
-    // Update payment status
-    payment.status = 'refunded';
-    payment.metadata = { ...payment.metadata, refundId: refund.id };
-    await payment.save();
-
-    // Create notification
-    await Notification.create({
-      user: payment.user,
-      type: 'payment_required', // Could create 'refund_processed' type
-      title: 'Refund Processed',
-      message: `Refund of $${payment.amount} has been processed for auction payment`,
-      auction: payment.auction
-    });
-
-    res.json({
-      success: true,
-      data: payment
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error'
-    });
-  }
-};
-
 module.exports = {
-  createPaymentIntent,
-  confirmPayment,
-  getMyPayments,
-  getPayment,
-  processRefund
+  createOrder,
+  verifyPayment,
+  getMyPayments
 };

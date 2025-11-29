@@ -13,6 +13,9 @@ const bidRoutes = require('./routes/bidRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const categoryRoutes = require('./routes/categoryRoutes');
+const reviewRoutes = require('./routes/reviewRoutes');
+const wishlistRoutes = require('./routes/wishlistRoutes');
 
 dotenv.config();
 
@@ -36,7 +39,7 @@ app.use(cors({
 }));
 app.use(cookieParser());
 
-app.use(apiLimiter);
+// app.use(apiLimiter);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -48,6 +51,9 @@ app.use('/api/bids', bidRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/wishlist', wishlistRoutes);
 
 // Socket.io for real-time bidding
 io.on('connection', (socket) => {
@@ -56,11 +62,46 @@ io.on('connection', (socket) => {
   socket.on('joinAuction', (auctionId) => {
     socket.join(auctionId);
     console.log(`User ${socket.id} joined auction ${auctionId}`);
+
+    // Send current auction state to the user
+    const roomSize = io.sockets.adapter.rooms.get(auctionId)?.size || 0;
+    socket.emit('auctionJoined', {
+      auctionId,
+      activeUsers: roomSize
+    });
+
+    // Notify others in the room
+    socket.to(auctionId).emit('userJoined', {
+      userId: socket.id,
+      activeUsers: roomSize
+    });
   });
 
   socket.on('leaveAuction', (auctionId) => {
     socket.leave(auctionId);
     console.log(`User ${socket.id} left auction ${auctionId}`);
+
+    const roomSize = io.sockets.adapter.rooms.get(auctionId)?.size || 0;
+    socket.to(auctionId).emit('userLeft', {
+      userId: socket.id,
+      activeUsers: roomSize
+    });
+  });
+
+  socket.on('bidPlaced', (data) => {
+    const { auctionId, bidData } = data;
+    // Broadcast to all users in the auction room except sender
+    socket.to(auctionId).emit('newBid', bidData);
+  });
+
+  socket.on('auctionEnding', (data) => {
+    const { auctionId, timeLeft } = data;
+    socket.to(auctionId).emit('auctionEnding', { timeLeft });
+  });
+
+  socket.on('auctionEnded', (data) => {
+    const { auctionId, winner } = data;
+    io.to(auctionId).emit('auctionEnded', { winner });
   });
 
   socket.on('disconnect', () => {

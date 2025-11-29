@@ -246,6 +246,102 @@ const getPendingAuctions = async (req, res) => {
   }
 };
 
+// @desc    Verify user Aadhaar
+// @route   PUT /api/admin/users/:id/verify-aadhaar
+// @access  Private (Admin only)
+const verifyAadhaar = async (req, res) => {
+  try {
+    const { status, notes } = req.body; // status: 'verified' or 'rejected'
+
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (!user.aadhaarNumber || user.aadhaarImages.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'User has not uploaded Aadhaar documents'
+      });
+    }
+
+    user.verificationStatus = status;
+    user.verificationNotes = notes || '';
+    user.verifiedAt = new Date();
+    user.verifiedBy = req.user._id;
+    await user.save();
+
+    // Create notification for user
+    const notificationType = status === 'verified' ? 'aadhaar_verified' : 'aadhaar_rejected';
+    const title = status === 'verified' ? 'Aadhaar Verified' : 'Aadhaar Verification Rejected';
+    const message = status === 'verified'
+      ? 'Your Aadhaar verification has been completed successfully. You now have verified status.'
+      : `Your Aadhaar verification was rejected. Reason: ${notes || 'No reason provided'}`;
+
+    await Notification.create({
+      user: user._id,
+      type: notificationType,
+      title,
+      message,
+      data: { verificationStatus: status, notes }
+    });
+
+    // Log activity
+    await ActivityLog.logActivity({
+      user: req.user._id,
+      action: 'admin_action',
+      description: `Aadhaar verification ${status} for user ${user.name}`,
+      metadata: { targetUser: user._id, status, notes }
+    });
+
+    res.json({
+      success: true,
+      message: `User Aadhaar ${status} successfully`,
+      data: {
+        userId: user._id,
+        verificationStatus: user.verificationStatus,
+        verifiedAt: user.verifiedAt
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
+// @desc    Get pending Aadhaar verifications
+// @route   GET /api/admin/pending-verifications
+// @access  Private (Admin only)
+const getPendingVerifications = async (req, res) => {
+  try {
+    const users = await User.find({
+      verificationStatus: 'pending',
+      aadhaarNumber: { $exists: true, $ne: null }
+    })
+      .select('name email aadhaarNumber aadhaarImages verificationStatus createdAt')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      count: users.length,
+      data: users
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
 // @desc    Handle dispute
 // @route   PUT /api/admin/auctions/:id/dispute
 // @access  Private (Admin only)
@@ -279,6 +375,14 @@ const handleDispute = async (req, res) => {
       auction: auction._id
     });
 
+    // Log activity
+    await ActivityLog.logActivity({
+      user: req.user._id,
+      action: 'admin_action',
+      description: `Dispute handled for auction ${auction.title}`,
+      metadata: { auctionId: auction._id, action, winner }
+    });
+
     res.json({
       success: true,
       data: auction
@@ -300,5 +404,7 @@ module.exports = {
   getAuctions,
   getStats,
   getPendingAuctions,
+  verifyAadhaar,
+  getPendingVerifications,
   handleDispute
 };

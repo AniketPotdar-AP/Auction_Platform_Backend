@@ -35,6 +35,11 @@ const auctionSchema = new mongoose.Schema({
     required: [true, 'Base price is required'],
     min: [0, 'Base price cannot be negative']
   },
+  minIncrement: {
+    type: Number,
+    required: [true, 'Minimum increment is required'],
+    min: [1, 'Minimum increment must be at least 1']
+  },
   currentBid: {
     type: Number,
     default: 0
@@ -42,6 +47,15 @@ const auctionSchema = new mongoose.Schema({
   reservePrice: {
     type: Number,
     min: [0, 'Reserve price cannot be negative']
+  },
+  deliveryOptions: {
+    type: String,
+    enum: ['Shipping', 'Pickup', 'Both'],
+    default: 'Shipping'
+  },
+  termsAndConditions: {
+    type: String,
+    trim: true
   },
   startTime: {
     type: Date,
@@ -52,7 +66,7 @@ const auctionSchema = new mongoose.Schema({
     type: Date,
     required: [true, 'End time is required'],
     validate: {
-      validator: function(value) {
+      validator: function (value) {
         return value > this.startTime;
       },
       message: 'End time must be after start time'
@@ -61,6 +75,11 @@ const auctionSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: ['pending', 'active', 'completed', 'cancelled'],
+    default: 'pending'
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'paid', 'overdue'],
     default: 'pending'
   },
   seller: {
@@ -111,14 +130,14 @@ auctionSchema.index({ category: 1, status: 1, endTime: 1 });
 auctionSchema.index({ seller: 1 });
 
 // Virtual for time remaining
-auctionSchema.virtual('timeRemaining').get(function() {
+auctionSchema.virtual('timeRemaining').get(function () {
   const now = new Date();
   const end = new Date(this.endTime);
   return Math.max(0, end - now);
 });
 
 // Virtual for isActive
-auctionSchema.virtual('isActive').get(function() {
+auctionSchema.virtual('isActive').get(function () {
   const now = new Date();
   return this.status === 'active' && now >= this.startTime && now <= this.endTime;
 });

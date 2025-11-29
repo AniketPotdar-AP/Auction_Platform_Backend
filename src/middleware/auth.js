@@ -51,8 +51,8 @@ const protect = async (req, res, next) => {
   }
 };
 
-// Grant access to specific roles
-const authorize = (...roles) => {
+// Grant access to specific permissions or roles
+const authorize = (...requirements) => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
@@ -61,10 +61,23 @@ const authorize = (...roles) => {
       });
     }
 
-    if (!roles.includes(req.user.role)) {
+    // Admin can access everything
+    if (req.user.role === 'admin') {
+      return next();
+    }
+
+    // Check permissions
+    const hasAllPermissions = requirements.every(requirement => {
+      if (typeof requirement === 'string' && req.user.permissions) {
+        return req.user.permissions[requirement] === true;
+      }
+      return false;
+    });
+
+    if (!hasAllPermissions) {
       return res.status(403).json({
         success: false,
-        message: `User role ${req.user.role} is not authorized to access this route`
+        message: 'Insufficient permissions to access this route'
       });
     }
 

@@ -7,28 +7,34 @@ const {
   deleteAuction,
   approveAuction,
   getAuctionsBySeller,
-  getMyAuctions
+  getMyAuctions,
+  getWonAuctions,
+  getActiveUsers
 } = require('../controllers/auctionController');
 
 const { protect, authorize } = require('../middleware/auth');
+const { upload } = require('../middleware/upload');
 
 const router = express.Router();
 
-// Public routes
+// Public routes (non-parameterized first)
 router.get('/', getAuctions);
-router.get('/:id', getAuction);
+router.get('/active-users', getActiveUsers);
 router.get('/seller/:sellerId', getAuctionsBySeller);
 
-// Protected routes
-router.use(protect);
+// Protected routes - MUST come before /:id route
+router.get('/won', protect, getWonAuctions);
+router.get('/myauctions', protect, authorize('canCreateAuction'), getMyAuctions);
 
-// Seller routes
-router.get('/myauctions', authorize('seller'), getMyAuctions);
-router.post('/', authorize('seller'), createAuction);
-router.put('/:id', authorize('seller'), updateAuction);
-router.delete('/:id', authorize('seller'), deleteAuction);
+// Now the dynamic :id route (after specific routes)
+router.get('/:id', getAuction);
+
+// Other protected routes
+router.post('/', protect, authorize('canCreateAuction'), upload.array('images', 5), createAuction);
+router.put('/:id', protect, authorize('canCreateAuction'), updateAuction);
+router.delete('/:id', protect, authorize('canCreateAuction'), deleteAuction);
 
 // Admin routes
-router.put('/:id/approve', authorize('admin'), approveAuction);
+router.put('/:id/approve', protect, authorize('admin'), approveAuction);
 
 module.exports = router;

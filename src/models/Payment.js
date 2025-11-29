@@ -27,15 +27,19 @@ const paymentSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['stripe', 'razorpay'],
-    required: true
+    enum: ['razorpay'],
+    default: 'razorpay'
   },
   transactionId: {
     type: String,
     required: true,
     unique: true
   },
-  paymentIntentId: {
+  orderId: {
+    type: String,
+    required: true
+  },
+  paymentId: {
     type: String
   },
   description: {
@@ -52,6 +56,6 @@ const paymentSchema = new mongoose.Schema({
 // Index for performance
 paymentSchema.index({ user: 1, status: 1 });
 paymentSchema.index({ auction: 1 });
-paymentSchema.index({ transactionId: 1 });
+
 
 module.exports = mongoose.model('Payment', paymentSchema);
