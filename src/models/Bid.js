@@ -14,7 +14,13 @@ const bidSchema = new mongoose.Schema({
   amount: {
     type: Number,
     required: [true, 'Bid amount is required'],
-    min: [0.01, 'Bid amount must be greater than 0']
+    min: [1, 'Bid amount must be at least 1'],
+    validate: {
+      validator: function (value) {
+        return Number.isInteger(value);
+      },
+      message: 'Bid amount must be a whole number'
+    }
   },
   timestamp: {
     type: Date,
@@ -37,7 +43,7 @@ bidSchema.index({ auction: 1, amount: -1 });
 bidSchema.index({ bidder: 1 });
 
 // Validate bid amount is higher than current highest bid
-bidSchema.pre('save', async function(next) {
+bidSchema.pre('save', async function (next) {
   if (this.isNew) {
     const Auction = mongoose.model('Auction');
     const auction = await Auction.findById(this.auction);
@@ -54,19 +60,20 @@ bidSchema.pre('save', async function(next) {
       return next(new Error('Sellers cannot bid on their own auctions'));
     }
 
+    // Check if bid meets minimum auction amount requirement
+    if (this.amount < auction.minAuctionAmount) {
+      return next(new Error(`Bid must be at least the minimum auction amount of $${auction.minAuctionAmount}`));
+    }
+
+    // Update auction's currentBid to the highest bid
     const highestBid = await this.constructor.findOne({ auction: this.auction })
       .sort({ amount: -1 })
       .limit(1);
 
-    const currentHighest = highestBid ? highestBid.amount : auction.basePrice;
-
-    if (this.amount <= currentHighest) {
-      return next(new Error(`Bid must be higher than current highest bid of $${currentHighest}`));
+    if (highestBid) {
+      auction.currentBid = highestBid.amount;
+      await auction.save();
     }
-
-    // Update auction's currentBid
-    auction.currentBid = this.amount;
-    await auction.save();
   }
 
   next();

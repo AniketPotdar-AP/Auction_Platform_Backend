@@ -33,12 +33,24 @@ const auctionSchema = new mongoose.Schema({
   basePrice: {
     type: Number,
     required: [true, 'Base price is required'],
-    min: [0, 'Base price cannot be negative']
+    min: [1, 'Base price must be at least 1'],
+    validate: {
+      validator: function (value) {
+        return Number.isInteger(value);
+      },
+      message: 'Base price must be a whole number'
+    }
   },
-  minIncrement: {
+  minAuctionAmount: {
     type: Number,
-    required: [true, 'Minimum increment is required'],
-    min: [1, 'Minimum increment must be at least 1']
+    required: [true, 'Minimum auction amount is required'],
+    min: [1, 'Minimum auction amount must be at least 1'],
+    validate: {
+      validator: function (value) {
+        return Number.isInteger(value);
+      },
+      message: 'Minimum auction amount must be a whole number'
+    }
   },
   currentBid: {
     type: Number,

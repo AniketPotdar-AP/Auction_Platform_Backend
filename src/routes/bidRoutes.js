@@ -2,6 +2,7 @@ const express = require('express');
 const {
   getBidsForAuction,
   placeBid,
+  updateBid,
   getMyBids,
   getBid
 } = require('../controllers/bidController');
@@ -17,6 +18,7 @@ router.get('/auction/:auctionId', getBidsForAuction);
 // Protected routes
 router.use(protect);
 router.post('/', bidLimiter, placeBid);
+router.put('/:id', bidLimiter, updateBid);
 router.get('/my-bids', getMyBids);
 router.get('/:id', getBid);
 

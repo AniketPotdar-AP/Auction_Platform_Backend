@@ -131,6 +131,11 @@ const createAuction = async (req, res) => {
     // Add seller to req.body
     req.body.seller = req.user._id;
 
+    // Set default minIncrement if not provided (for backward compatibility)
+    if (!req.body.minIncrement) {
+      req.body.minIncrement = 10; // Default increment of ₹10
+    }
+
     // Upload images to ImageKit
     if (req.files && req.files.length > 0) {
       const imageUrls = [];

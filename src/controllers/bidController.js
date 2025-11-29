@@ -170,6 +170,124 @@ const getMyBids = async (req, res) => {
   }
 };
 
+// @desc    Update a bid
+// @route   PUT /api/bids/:id
+// @access  Private (Bid owner only)
+const updateBid = async (req, res) => {
+  try {
+    const { amount } = req.body;
+    const io = req.app.get('io');
+
+    const bid = await Bid.findById(req.params.id);
+    if (!bid) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bid not found'
+      });
+    }
+
+    // Check if user owns this bid
+    if (bid.bidder.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to update this bid'
+      });
+    }
+
+    // Check if auction is still active
+    const auction = await Auction.findById(bid.auction);
+    if (!auction || auction.status !== 'active') {
+      return res.status(400).json({
+        success: false,
+        message: 'Auction is not active'
+      });
+    }
+
+    // Check if auction has ended
+    if (new Date() > new Date(auction.endTime)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Auction has ended'
+      });
+    }
+
+    // Update the bid amount
+    bid.amount = amount;
+    await bid.save();
+
+    // Populate bidder info
+    await bid.populate('bidder', 'name avatar');
+
+    // Get all previous bids for this auction to find outbid users
+    const previousBids = await Bid.find({ auction: bid.auction })
+      .populate('bidder', 'name email')
+      .sort({ amount: -1 });
+
+    // Find the highest bid
+    const highestBid = previousBids[0];
+
+    // Update auction's currentBid
+    auction.currentBid = highestBid.amount;
+    await auction.save();
+
+    // Notify outbid users (excluding the bidder who just updated)
+    const outbidUsers = previousBids.filter(b => b._id.toString() !== bid._id.toString() && b.amount < highestBid.amount);
+    for (const outbidBid of outbidUsers) {
+      await Notification.create({
+        user: outbidBid.bidder._id,
+        type: 'outbid',
+        title: 'You have been outbid',
+        message: `Someone placed a higher bid on "${auction.title}"`,
+        auction: bid.auction,
+        bid: bid._id
+      });
+    }
+
+    // Notify seller of updated bid
+    await Notification.create({
+      user: auction.seller,
+      type: 'bid_updated',
+      title: 'Bid updated',
+      message: `A bid was updated to $${amount} on your auction "${auction.title}"`,
+      auction: bid.auction,
+      bid: bid._id
+    });
+
+    // Emit real-time updates via Socket.io
+    io.to(bid.auction.toString()).emit('bidUpdated', {
+      bid: {
+        _id: bid._id,
+        amount: bid.amount,
+        bidder: {
+          _id: bid.bidder._id,
+          name: bid.bidder.name,
+          avatar: bid.bidder.avatar
+        },
+        timestamp: bid.timestamp
+      },
+      currentBid: auction.currentBid,
+      bidderCount: previousBids.length
+    });
+
+    res.json({
+      success: true,
+      data: bid
+    });
+  } catch (error) {
+    console.error(error);
+    if (error.message.includes('Bid must be')) {
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
 // @desc    Get bid details
 // @route   GET /api/bids/:id
 // @access  Private
@@ -220,6 +338,7 @@ const getBid = async (req, res) => {
 module.exports = {
   getBidsForAuction,
   placeBid,
+  updateBid,
   getMyBids,
   getBid
 };
