@@ -130,8 +130,6 @@ const createAuction = async (req, res) => {
   try {
     // Add seller to req.body
     req.body.seller = req.user._id;
-    console.log('createAuction - Setting seller to:', req.user._id);
-    console.log('createAuction - User:', req.user);
 
     // Upload images to ImageKit
     if (req.files && req.files.length > 0) {
@@ -144,14 +142,13 @@ const createAuction = async (req, res) => {
     }
 
     const auction = await Auction.create(req.body);
-    console.log('createAuction - Created auction:', { id: auction._id, title: auction.title, seller: auction.seller });
 
     res.status(201).json({
       success: true,
       data: auction
     });
   } catch (error) {
-    console.error('createAuction error:', error);
+    console.error(error);
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(val => val.message);
       return res.status(400).json({
@@ -330,15 +327,9 @@ const getAuctionsBySeller = async (req, res) => {
 // @access  Private (Seller only)
 const getMyAuctions = async (req, res) => {
   try {
-    console.log('getMyAuctions - User ID:', req.user._id);
-    console.log('getMyAuctions - User:', req.user);
-
     const auctions = await Auction.find({ seller: req.user._id })
       .populate('winner', 'name avatar email')
       .sort({ createdAt: -1 });
-
-    console.log('getMyAuctions - Found auctions:', auctions.length);
-    console.log('getMyAuctions - Auctions:', auctions.map(a => ({ id: a._id, title: a.title, seller: a.seller })));
 
     res.json({
       success: true,
@@ -346,7 +337,7 @@ const getMyAuctions = async (req, res) => {
       data: auctions
     });
   } catch (error) {
-    console.error('getMyAuctions error:', error);
+    console.error(error);
     res.status(500).json({
       success: false,
       message: 'Server error'

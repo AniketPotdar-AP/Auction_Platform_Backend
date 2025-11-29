@@ -12,6 +12,8 @@ const {
   handleDispute
 } = require('../controllers/adminController');
 
+const { getAuctionCreationAnalytics } = require('../controllers/userController');
+
 const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
@@ -35,5 +37,6 @@ router.put('/auctions/:id/dispute', handleDispute);
 
 // Analytics
 router.get('/stats', getStats);
+router.get('/auction-creation-analytics', getAuctionCreationAnalytics);
 
 module.exports = router;

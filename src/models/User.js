@@ -42,7 +42,7 @@ const userSchema = new mongoose.Schema({
     },
     canCreateAuction: {
       type: Boolean,
-      default: false
+      default: true // Temporarily allow all users to create auctions for testing
     }
   },
   phone: {
@@ -142,7 +142,8 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
 // Update permissions based on verification status
 userSchema.methods.updatePermissions = function () {
   this.permissions.canBid = true; // Always true for logged-in users
-  this.permissions.canCreateAuction = this.verificationStatus === 'verified';
+  // Keep canCreateAuction as default true for testing
+  // this.permissions.canCreateAuction = this.verificationStatus === 'verified';
 };
 
 // Remove sensitive fields from JSON output

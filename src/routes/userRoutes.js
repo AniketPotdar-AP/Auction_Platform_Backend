@@ -21,15 +21,20 @@ const {
 } = require('../controllers/userController');
 
 const { protect } = require('../middleware/auth');
-const { authLimiter } = require('../middleware/rateLimiter');
+// const { authLimiter } = require('../middleware/rateLimiter');
 const { upload } = require('../middleware/upload');
 
 const router = express.Router();
 
 // Public routes
-router.post('/register', authLimiter, register);
-router.post('/login', authLimiter, login);
-router.post('/forgot-password', authLimiter, forgotPassword);
+// router.post('/register', authLimiter, register);
+// router.post('/login', authLimiter, login);
+// router.post('/forgot-password', authLimiter, forgotPassword);
+
+router.post('/register', register);
+router.post('/login', login);
+router.post('/forgot-password', forgotPassword);
+
 router.put('/reset-password/:token', resetPassword);
 router.get('/stats', getUserStats);
 

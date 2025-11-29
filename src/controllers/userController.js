@@ -364,6 +364,77 @@ const getUserCreationAnalytics = async (req, res) => {
     }
 };
 
+// @desc    Get auction creation analytics
+// @route   GET /api/users/auction-creation-analytics
+// @access  Private (Admin only)
+const getAuctionCreationAnalytics = async (req, res) => {
+    try {
+        // Get auction creations for the last 12 months
+        const twelveMonthsAgo = new Date();
+        twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+
+        const auctionCreationData = await Auction.aggregate([
+            {
+                $match: {
+                    createdAt: { $gte: twelveMonthsAgo }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        year: { $year: '$createdAt' },
+                        month: { $month: '$createdAt' }
+                    },
+                    count: { $sum: 1 }
+                }
+            },
+            {
+                $sort: { '_id.year': 1, '_id.month': 1 }
+            }
+        ]);
+
+        // Format the data for the chart
+        const labels = [];
+        const data = [];
+
+        // Generate labels for the last 12 months
+        const now = new Date();
+        for (let i = 11; i >= 0; i--) {
+            const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const monthName = date.toLocaleString('default', { month: 'short' });
+            const year = date.getFullYear();
+            labels.push(`${monthName} ${year}`);
+        }
+
+        // Map the aggregated data to the labels
+        const dataMap = {};
+        auctionCreationData.forEach(item => {
+            const monthName = new Date(item._id.year, item._id.month - 1, 1).toLocaleString('default', { month: 'short' });
+            const key = `${monthName} ${item._id.year}`;
+            dataMap[key] = item.count;
+        });
+
+        // Fill data array with counts or 0
+        labels.forEach(label => {
+            data.push(dataMap[label] || 0);
+        });
+
+        res.json({
+            success: true,
+            data: {
+                labels,
+                data
+            }
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+};
+
 module.exports = {
     uploadAadhaar,
     getDashboard,
@@ -371,5 +442,6 @@ module.exports = {
     updateProfile,
     uploadAvatar,
     getUserStats,
-    getUserCreationAnalytics
+    getUserCreationAnalytics,
+    getAuctionCreationAnalytics
 };
