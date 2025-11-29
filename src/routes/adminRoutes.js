@@ -7,6 +7,8 @@ const {
   getAuctions,
   getStats,
   getPendingAuctions,
+  getPendingVerifications,
+  verifyAadhaar,
   handleDispute
 } = require('../controllers/adminController');
 
@@ -22,7 +24,9 @@ router.use(authorize('admin'));
 router.get('/users', getUsers);
 router.get('/users/:id', getUser);
 router.put('/users/:id', updateUser);
+router.put('/users/:id/verify-aadhaar', verifyAadhaar);
 router.delete('/users/:id', deleteUser);
+router.get('/pending-verifications', getPendingVerifications);
 
 // Auction management
 router.get('/auctions', getAuctions);

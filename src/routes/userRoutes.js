@@ -16,7 +16,8 @@ const {
   getProfile,
   updateProfile,
   uploadAvatar,
-  getUserStats
+  getUserStats,
+  getUserCreationAnalytics
 } = require('../controllers/userController');
 
 const { protect } = require('../middleware/auth');
@@ -45,5 +46,6 @@ router.put('/profile', updateProfile);
 router.post('/upload-avatar', upload.single('avatar'), uploadAvatar);
 router.post('/upload-aadhaar', upload.array('aadhaarImages', 2), uploadAadhaar);
 router.get('/dashboard', getDashboard);
+router.get('/creation-analytics', getUserCreationAnalytics);
 
 module.exports = router;

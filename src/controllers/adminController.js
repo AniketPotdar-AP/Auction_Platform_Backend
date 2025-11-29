@@ -230,6 +230,7 @@ const getPendingAuctions = async (req, res) => {
   try {
     const auctions = await Auction.find({ isApproved: false, status: 'pending' })
       .populate('seller', 'name email')
+      .select('title description basePrice startingBid category endTime images seller status isApproved createdAt')
       .sort({ createdAt: -1 });
 
     res.json({

@@ -36,7 +36,7 @@ const uploadAadhaar = async (req, res) => {
         // Upload images to ImageKit if provided
         if (req.files && req.files.length > 0) {
             for (const file of req.files) {
-                const result = await uploadToImageKit(file.path, 'aadhaar_documents', {
+                const result = await uploadToImageKit(file.buffer, 'aadhaar_documents', {
                     fileName: `${user._id}_${Date.now()}_${file.originalname}`
                 });
                 aadhaarImages.push(result.secure_url);
@@ -238,7 +238,7 @@ const uploadAvatar = async (req, res) => {
         }
 
         // Upload to ImageKit
-        const result = await uploadToImageKit(req.file.path, 'avatars', {
+        const result = await uploadToImageKit(req.file.buffer, 'avatars', {
             fileName: `${req.user._id}_${Date.now()}`,
             width: 150,
             height: 150,
@@ -293,11 +293,83 @@ const getUserStats = async (req, res) => {
     }
 };
 
+// @desc    Get user creation analytics
+// @route   GET /api/users/creation-analytics
+// @access  Private
+const getUserCreationAnalytics = async (req, res) => {
+    try {
+        // Get user registrations for the last 12 months
+        const twelveMonthsAgo = new Date();
+        twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+
+        const userCreationData = await User.aggregate([
+            {
+                $match: {
+                    createdAt: { $gte: twelveMonthsAgo }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        year: { $year: '$createdAt' },
+                        month: { $month: '$createdAt' }
+                    },
+                    count: { $sum: 1 }
+                }
+            },
+            {
+                $sort: { '_id.year': 1, '_id.month': 1 }
+            }
+        ]);
+
+        // Format the data for the chart
+        const labels = [];
+        const data = [];
+
+        // Generate labels for the last 12 months
+        const now = new Date();
+        for (let i = 11; i >= 0; i--) {
+            const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const monthName = date.toLocaleString('default', { month: 'short' });
+            const year = date.getFullYear();
+            labels.push(`${monthName} ${year}`);
+        }
+
+        // Map the aggregated data to the labels
+        const dataMap = {};
+        userCreationData.forEach(item => {
+            const monthName = new Date(item._id.year, item._id.month - 1, 1).toLocaleString('default', { month: 'short' });
+            const key = `${monthName} ${item._id.year}`;
+            dataMap[key] = item.count;
+        });
+
+        // Fill data array with counts or 0
+        labels.forEach(label => {
+            data.push(dataMap[label] || 0);
+        });
+
+        res.json({
+            success: true,
+            data: {
+                labels,
+                data
+            }
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+};
+
 module.exports = {
     uploadAadhaar,
     getDashboard,
     getProfile,
     updateProfile,
     uploadAvatar,
-    getUserStats
+    getUserStats,
+    getUserCreationAnalytics
 };

@@ -24,7 +24,7 @@ router.get('/seller/:sellerId', getAuctionsBySeller);
 
 // Protected routes - MUST come before /:id route
 router.get('/won', protect, getWonAuctions);
-router.get('/myauctions', protect, authorize('canCreateAuction'), getMyAuctions);
+router.get('/myauctions', protect, getMyAuctions);
 
 // Now the dynamic :id route (after specific routes)
 router.get('/:id', getAuction);
